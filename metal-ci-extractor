@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+
+import argparse
+import logging
+import os
+import re
+import sys
+import tarfile
+
+import requests
+
+
+BUFSIZE = 16 * 2**20
+NAMESPACE = '/namespaces/openshift-machine-api/'
+
+
+def download(target):
+    with requests.get(target) as resp:
+        resp.raise_for_status()
+        return resp.text
+
+
+def download_file(target, destination):
+    with requests.get(target, stream=True) as resp:
+        resp.raise_for_status()
+        with open(destination, 'wb') as f:
+            for chunk in resp.iter_content(chunk_size=None):
+                if chunk:
+                    f.write(chunk)
+
+
+def sendfile(fd, destination):
+    os.makedirs(os.path.dirname(destination), exist_ok=True)
+    with open(destination, "wb") as dest_fd:
+        while True:
+            buf = fd.read(BUFSIZE)
+            if buf:
+                dest_fd.write(buf)
+            else:
+                return
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("url", help="URL with CI results")
+parser.add_argument("dest", help="destination directory")
+parser.add_argument("--debug", help="enable debug logging",
+                    action="store_true")
+args = parser.parse_args()
+
+logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO)
+log = logging.getLogger("metal-ci-extractor")
+
+os.makedirs(args.dest, exist_ok=True)
+
+# Yes, I'm parsing HTML with regular expressions, what will you do? Fight me?
+artifacts_re = re.compile(r'<a href="([^"]+)">Artifacts</a>', re.IGNORECASE)
+job_name_re = re.compile(r'/pull\-ci\-[^/]+\-(e2e-[^/]+)/')
+metal3_log_re = re.compile(
+    r'pods/metal3-.*/(?:metal3\-)?([^/]+)/logs/current.log')
+cbo_re = re.compile(
+    r'pods/.*/cluster-baremetal-operator/logs/current.log')
+
+url = args.url
+if "prow.ci.openshift.org" in url:
+    log.debug("Prow link detected, looking for artifacts in %s", url)
+    text = download(url)
+    artifacts = artifacts_re.search(text)
+    if artifacts:
+        url = artifacts.group(1)
+        log.debug("Found artifacts URL: %s", url)
+    else:
+        log.debug("Suspicious: no artifacts URL")
+
+job_name = job_name_re.search(url)
+if job_name:
+    job_name = job_name.group(1)
+    log.debug("Artifacts for job %s", job_name)
+else:
+    sys.exit(f"Cannot detect job name from URL {url}")
+
+base_url = os.path.join(url, "artifacts", job_name)
+
+must_gather_path = os.path.join(args.dest, "must-gather.tar")
+if not os.path.exists(must_gather_path):
+    must_gather_url = os.path.join(base_url, "gather-must-gather", "artifacts",
+                                   "must-gather.tar")
+    log.info("Downloading must-gather from %s", must_gather_url)
+    download_file(must_gather_url, must_gather_path)
+else:
+    log.info("must-gather already downloaded")
+
+with tarfile.open(must_gather_path) as must_gather:
+    entries = {e.split(NAMESPACE, 1)[1]: e
+               for e in must_gather.getnames() if NAMESPACE in e}
+
+    log.info("Extracting core resources")
+    for name in ["core/pods.yaml",
+                 "apps/daemonsets.yaml",
+                 "apps/deployments.yaml"]:
+        log.debug("\t%s", name)
+        sendfile(must_gather.extractfile(entries[name]),
+                 os.path.join(args.dest, os.path.basename(name)))
+
+    for group in ["metal3.io", "machine.openshift.io"]:
+        log.info("Extracting %s resources", group)
+        for name, path in entries.items():
+            if name.startswith(f"{group}/"):
+                source = must_gather.extractfile(path)
+                if source is not None:
+                    dest = name.split('/', 1)[1]
+                    log.debug("\t%s", name)
+                    sendfile(source, os.path.join(args.dest, dest))
+
+    log_path = os.path.join(args.dest, "logs")
+
+    log.info("Extracting metal service logs")
+    for name, path in entries.items():
+        log_match = metal3_log_re.fullmatch(name)
+        if log_match:
+            dest = f"{log_match.group(1)}.log"
+        else:
+            cbo_match = cbo_re.fullmatch(name)
+            if cbo_match:
+                dest = "cluster-baremetal-operator.log"
+            else:
+                continue
+
+        source = must_gather.extractfile(path)
+        log.debug("\t%s -> %s", name, dest)
+        sendfile(source, os.path.join(log_path, dest))
+
+log.info("Extracted to %s", args.dest)
