@@ -14,4 +14,7 @@ sudo dnf install -y python3-requests
 ./metal-ci-extractor <url with results> <destination directory>
 ```
 
+Instead of a URL, you can also provide a path to an already downloaded
+must-gather archive.
+
 Use `--help` for other flags.

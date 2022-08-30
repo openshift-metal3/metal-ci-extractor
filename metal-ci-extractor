@@ -41,7 +41,7 @@ def sendfile(fd, destination):
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("url", help="URL with CI results")
+parser.add_argument("url", help="URL with CI results or a must-gather file")
 parser.add_argument("dest", help="destination directory")
 parser.add_argument("--debug", help="enable debug logging",
                     action="store_true")
@@ -61,33 +61,38 @@ cbo_re = re.compile(
     r'pods/.*/cluster-baremetal-operator/logs/current.log')
 
 url = args.url
-if "prow.ci.openshift.org" in url:
-    log.debug("Prow link detected, looking for artifacts in %s", url)
-    text = download(url)
-    artifacts = artifacts_re.search(text)
-    if artifacts:
-        url = artifacts.group(1)
-        log.debug("Found artifacts URL: %s", url)
+if url.startswith('http://') or url.startswith('https://'):
+    if "prow.ci.openshift.org" in url:
+        log.debug("Prow link detected, looking for artifacts in %s", url)
+        text = download(url)
+        artifacts = artifacts_re.search(text)
+        if artifacts:
+            url = artifacts.group(1)
+            log.debug("Found artifacts URL: %s", url)
+        else:
+            log.debug("Suspicious: no artifacts URL")
+
+    job_name = job_name_re.search(url)
+    if job_name:
+        job_name = job_name.group(1)
+        log.debug("Artifacts for job %s", job_name)
     else:
-        log.debug("Suspicious: no artifacts URL")
+        sys.exit(f"Cannot detect job name from URL {url}")
 
-job_name = job_name_re.search(url)
-if job_name:
-    job_name = job_name.group(1)
-    log.debug("Artifacts for job %s", job_name)
+    base_url = os.path.join(url, "artifacts", job_name)
+
+    must_gather_path = os.path.join(args.dest, "must-gather.tar")
+    if not os.path.exists(must_gather_path):
+        must_gather_url = os.path.join(base_url, "gather-must-gather",
+                                       "artifacts", "must-gather.tar")
+        log.info("Downloading must-gather from %s", must_gather_url)
+        download_file(must_gather_url, must_gather_path)
+    else:
+        log.info("must-gather already downloaded")
+elif not os.path.isfile(url):
+    sys.exit(f"{url} is not a URL and not a valid file")
 else:
-    sys.exit(f"Cannot detect job name from URL {url}")
-
-base_url = os.path.join(url, "artifacts", job_name)
-
-must_gather_path = os.path.join(args.dest, "must-gather.tar")
-if not os.path.exists(must_gather_path):
-    must_gather_url = os.path.join(base_url, "gather-must-gather", "artifacts",
-                                   "must-gather.tar")
-    log.info("Downloading must-gather from %s", must_gather_url)
-    download_file(must_gather_url, must_gather_path)
-else:
-    log.info("must-gather already downloaded")
+    must_gather_path = url
 
 with tarfile.open(must_gather_path) as must_gather:
     entries = {e.split(NAMESPACE, 1)[1]: e
