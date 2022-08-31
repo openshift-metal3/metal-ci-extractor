@@ -95,8 +95,9 @@ else:
     must_gather_path = url
 
 with tarfile.open(must_gather_path) as must_gather:
+    all_entries = list(must_gather.getnames())
     entries = {e.split(NAMESPACE, 1)[1]: e
-               for e in must_gather.getnames() if NAMESPACE in e}
+               for e in all_entries if NAMESPACE in e}
 
     log.info("Extracting core resources")
     for name in ["core/pods.yaml",
@@ -115,6 +116,16 @@ with tarfile.open(must_gather_path) as must_gather:
                     dest = name.split('/', 1)[1]
                     log.debug("\t%s", name)
                     sendfile(source, os.path.join(args.dest, dest))
+
+    log.info("Extracting other resources")
+
+    for path in all_entries:
+        if '/metal3.io/provisionings/' in path:
+            source = must_gather.extractfile(path)
+            if source is not None:
+                dest = path.rsplit('/', 1)[1]
+                log.debug("\t%s", name)
+                sendfile(source, os.path.join(args.dest, dest))
 
     log_path = os.path.join(args.dest, "logs")
 
