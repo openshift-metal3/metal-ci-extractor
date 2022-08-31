@@ -55,6 +55,9 @@ os.makedirs(args.dest, exist_ok=True)
 # Yes, I'm parsing HTML with regular expressions, what will you do? Fight me?
 artifacts_re = re.compile(r'<a href="([^"]+)">Artifacts</a>', re.IGNORECASE)
 job_name_re = re.compile(r'/pull\-ci\-[^/]+\-(e2e-[^/]+)/')
+image_cache_log_re = re.compile(
+    r'pods/(?:metal3\-)?(image-cache|ironic-proxy)-([^/]+)/.*/'
+    r'(?:metal3\-)?([^/]+)/logs/current.log')
 metal3_log_re = re.compile(
     r'pods/metal3-.*/(?:metal3\-)?([^/]+)/logs/current.log')
 cbo_re = re.compile(
@@ -131,15 +134,22 @@ with tarfile.open(must_gather_path) as must_gather:
 
     log.info("Extracting metal service logs")
     for name, path in entries.items():
-        log_match = metal3_log_re.fullmatch(name)
-        if log_match:
-            dest = f"{log_match.group(1)}.log"
+        ic_match = image_cache_log_re.fullmatch(name)
+        if ic_match:
+            dest = (
+                f"{ic_match.group(1)}-{ic_match.group(2)}/"
+                f"{ic_match.group(3)}.log"
+            )
         else:
-            cbo_match = cbo_re.fullmatch(name)
-            if cbo_match:
-                dest = "cluster-baremetal-operator.log"
+            m3_match = metal3_log_re.fullmatch(name)
+            if m3_match:
+                dest = f"{m3_match.group(1)}.log"
             else:
-                continue
+                cbo_match = cbo_re.fullmatch(name)
+                if cbo_match:
+                    dest = "cluster-baremetal-operator.log"
+                else:
+                    continue
 
         source = must_gather.extractfile(path)
         log.debug("\t%s -> %s", name, dest)
