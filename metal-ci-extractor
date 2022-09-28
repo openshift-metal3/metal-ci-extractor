@@ -140,6 +140,8 @@ with tarfile.open(must_gather_path) as must_gather:
             extract(must_gather, path, prefix='nodes')
         if path.endswith('/clusterversions/version.yaml'):
             extract(must_gather, path)
+        if path.endswith('clusteroperators/baremetal.yaml'):
+            extract(must_gather, path, dest='clusteroperator.yaml')
 
     log_path = os.path.join(args.dest, "logs")
 
