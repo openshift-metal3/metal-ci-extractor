@@ -40,6 +40,20 @@ def sendfile(fd, destination):
                 return
 
 
+def extract(must_gather, path, dest=None, prefix=None):
+    source = must_gather.extractfile(path)
+    if source is None:
+        return
+
+    if not dest:
+        dest = path.rsplit('/', 1)[1]
+        if prefix:
+            dest = os.path.join(prefix, dest)
+
+    log.debug("\t%s", dest)
+    sendfile(source, os.path.join(args.dest, dest))
+
+
 parser = argparse.ArgumentParser()
 parser.add_argument("url", help="URL with CI results or a must-gather file")
 parser.add_argument("dest", help="destination directory")
@@ -114,27 +128,18 @@ with tarfile.open(must_gather_path) as must_gather:
         log.info("Extracting %s resources", group)
         for name, path in entries.items():
             if name.startswith(f"{group}/"):
-                source = must_gather.extractfile(path)
-                if source is not None:
-                    dest = name.split('/', 1)[1]
-                    log.debug("\t%s", name)
-                    sendfile(source, os.path.join(args.dest, dest))
+                dest = name.split('/', 1)[1]
+                extract(must_gather, path, dest=dest)
 
     log.info("Extracting other resources")
 
     for path in all_entries:
         if '/metal3.io/provisionings/' in path:
-            source = must_gather.extractfile(path)
-            if source is not None:
-                dest = path.rsplit('/', 1)[1]
-                log.debug("\t%s", dest)
-                sendfile(source, os.path.join(args.dest, dest))
+            extract(must_gather, path)
         if '/core/nodes/' in path:
-            source = must_gather.extractfile(path)
-            if source is not None:
-                dest = path.rsplit('/', 1)[1]
-                log.debug("\tnodes/%s", dest)
-                sendfile(source, os.path.join(args.dest, 'nodes', dest))
+            extract(must_gather, path, prefix='nodes')
+        if path.endswith('/clusterversions/version.yaml'):
+            extract(must_gather, path)
 
     log_path = os.path.join(args.dest, "logs")
 
