@@ -75,7 +75,8 @@ image_cache_log_re = re.compile(
 metal3_log_re = re.compile(
     r'pods/metal3-.*/(?:metal3\-)?([^/]+)/logs/current.log')
 cbo_re = re.compile(
-    r'pods/.*/cluster-baremetal-operator/logs/current.log')
+    r'pods/.*/(cluster-baremetal-operator|machine-controller)/'
+    'logs/current.log')
 
 url = args.url
 if url.startswith('http://') or url.startswith('https://'):
@@ -160,7 +161,7 @@ with tarfile.open(must_gather_path) as must_gather:
             else:
                 cbo_match = cbo_re.fullmatch(name)
                 if cbo_match:
-                    dest = "cluster-baremetal-operator.log"
+                    dest = f"{cbo_match.group(1)}.log"
                 else:
                     continue
 
