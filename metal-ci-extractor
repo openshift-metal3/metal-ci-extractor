@@ -127,8 +127,14 @@ with tarfile.open(must_gather_path) as must_gather:
             source = must_gather.extractfile(path)
             if source is not None:
                 dest = path.rsplit('/', 1)[1]
-                log.debug("\t%s", name)
+                log.debug("\t%s", dest)
                 sendfile(source, os.path.join(args.dest, dest))
+        if '/core/nodes/' in path:
+            source = must_gather.extractfile(path)
+            if source is not None:
+                dest = path.rsplit('/', 1)[1]
+                log.debug("\tnodes/%s", dest)
+                sendfile(source, os.path.join(args.dest, 'nodes', dest))
 
     log_path = os.path.join(args.dest, "logs")
 
