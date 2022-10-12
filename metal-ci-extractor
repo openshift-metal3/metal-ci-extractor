@@ -41,7 +41,12 @@ def sendfile(fd, destination):
 
 
 def extract(must_gather, path, dest=None, prefix=None):
-    source = must_gather.extractfile(path)
+    try:
+        source = must_gather.extractfile(path)
+    except KeyError:
+        log.debug("\tNOT FOUND: %s", path)
+        return
+
     if source is None:
         return
 
