@@ -124,6 +124,7 @@ with tarfile.open(must_gather_path) as must_gather:
 
     log.info("Extracting core resources")
     for name in ["core/pods.yaml",
+                 "core/configmaps.yaml",
                  "apps/daemonsets.yaml",
                  "apps/deployments.yaml"]:
         log.debug("\t%s", name)
