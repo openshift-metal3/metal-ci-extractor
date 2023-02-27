@@ -149,6 +149,9 @@ with tarfile.open(must_gather_path) as must_gather:
             extract(must_gather, path)
         if path.endswith('clusteroperators/baremetal.yaml'):
             extract(must_gather, path, dest='clusteroperator.yaml')
+        if '/certificatesigningrequests/' in path:
+            dest = 'csr/' + os.path.basename(path)
+            extract(must_gather, path, dest=dest)
 
     log_path = os.path.join(args.dest, "logs")
 
